@@ -5,19 +5,24 @@ interface
 uses
   System.Threading, System.Generics.Collections, System.MulticastEventU, idHTTP;
 
-{$M+}
-{$O+}
+{$M+,O+}
+
+{$IFOPT O-}
+{$MESSAGE Fatal 'Optimization _must_ be turned on for this unit to work!'}
+{$ENDIF}
+
+
 {$HINTS OFF}
 
-// Hints off inorder for hideing message;
+// Hints off in order for hiding message;
 // [dcc32 Hint] OnlineOfflineU.pas(29): H2269 Overriding virtual method 'TOnlineOffline.Destroy' has lower visibility (private) than base class 'TThread' (public)
 type
-  TState = (Offline, Online);
-  TStateChanged = procedure(const NewState: TState) of object;
+  TOnlineState = (Offline, Online);
+  TStateChanged = procedure(const NewState: TOnlineState) of object;
 
   iStateChanged = interface
     ['{47BF0544-238C-4721-A847-ED03C2F77113}']
-    procedure OnStateChanged(const NewState: TState);
+    procedure OnStateChanged(const NewState: TOnlineState);
   end;
 
   TMulticastStateChangedEvent = TMulticastEvent<TStateChanged>;
@@ -30,7 +35,7 @@ type
   private
     FidHTTP: TIdHTTP;
     FScanningInterval: Integer;
-    FState: TState;
+    FOnlineState: TOnlineState;
     FStateChangedNotifiers: TMulticastStateChangedEvent;
     FTask: ITask;
     FTerminated: Boolean;
@@ -39,16 +44,17 @@ type
     destructor Destroy; override;
     procedure CheckState;
     procedure DoNotify;
-    procedure SetState(const Value: TState);
+    procedure SetOnlineState(const Value: TOnlineState);
     procedure StartTask;
+    procedure SetScanningInterval(const Value: Integer);
   public
     class destructor Destroy;
     class function Instance: TOnlineOffline;
     procedure Start;
     procedure Stop;
   published
-    property ScanningInterval: Integer read FScanningInterval write FScanningInterval;
-    property State: TState read FState write SetState;
+    property ScanningInterval: Integer read FScanningInterval write SetScanningInterval;
+    property OnlineState: TOnlineState read FOnlineState write SetOnlineState;
     property StateChangedNotifiers: TMulticastStateChangedEvent read FStateChangedNotifiers;
     property Terminated: Boolean read FTerminated;
   end;
@@ -60,6 +66,7 @@ implementation
 
 uses
   System.Classes, System.Sysutils;
+
 { TOnlineOffline }
 
 function OnlineOffline: TOnlineOffline;
@@ -72,7 +79,7 @@ begin
   inherited Create;
   FScanningInterval := 10;
   FStateChangedNotifiers := TMulticastStateChangedEvent.Create;
-  FState := TState.Offline;
+  FOnlineState := TOnlineState.Offline;
   FidHTTP := TIdHTTP.Create(nil);
   Start;
 end;
@@ -93,18 +100,18 @@ end;
 
 procedure TOnlineOffline.CheckState;
 var
-  NewState: TState;
+  NewState: TOnlineState;
 begin
   try
     FidHTTP.Get(DestinationSite);
-    NewState := TState.Online;
+    NewState := TOnlineState.Online;
   except
-    NewState := TState.Offline;
+    NewState := TOnlineState.Offline;
   end;
 
-  if NewState <> FState then
+  if NewState <> FOnlineState then
   begin
-    FState := NewState;
+    FOnlineState := NewState;
     DoNotify;
   end;
 end;
@@ -114,7 +121,7 @@ begin
   TThread.Queue(TThread.Current,
     procedure
     begin
-      FStateChangedNotifiers.Invoke(FState);
+      FStateChangedNotifiers.Invoke(FOnlineState);
     end);
 end;
 
@@ -125,10 +132,16 @@ begin
   Result := FInstance;
 end;
 
-procedure TOnlineOffline.SetState(const Value: TState);
+procedure TOnlineOffline.SetOnlineState(const Value: TOnlineState);
 begin
-  FState := Value;
+  FOnlineState := Value;
   DoNotify;
+end;
+
+procedure TOnlineOffline.SetScanningInterval(const Value: Integer);
+begin
+  FScanningInterval := Value;
+  StartTask;
 end;
 
 procedure TOnlineOffline.Start;
@@ -138,6 +151,7 @@ end;
 
 procedure TOnlineOffline.StartTask;
 begin
+  Stop;
   FTerminated := False;
   FTask := TTask.Run(
     procedure
@@ -146,12 +160,11 @@ begin
     const
       InternalSleepInterval = 100;
     begin
-
       Counter := 0;
       repeat
         Sleep(InternalSleepInterval);
         Inc(Counter);
-      until (Terminated) or (Counter = 1 * MSecsPerSec div InternalSleepInterval);
+      until (Terminated) or (Counter = 2);
 
       if Terminated then
         exit;
@@ -170,7 +183,6 @@ begin
           CheckState;
       end;
     end);
-
 end;
 
 procedure TOnlineOffline.Stop;

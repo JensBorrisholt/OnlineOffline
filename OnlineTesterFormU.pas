@@ -12,7 +12,7 @@ type
     procedure FormCreate(Sender: TObject);
   private
     { Private declarations }
-    procedure OnStateChanged(const NewState: TState);
+    procedure OnStateChanged(const NewState: TOnlineState);
 
   public
     { Public declarations }
@@ -27,10 +27,10 @@ begin
   OnlineOffline.StateChangedNotifiers.Add(OnStateChanged);
 end;
 
-procedure TOnlineTesterForm.OnStateChanged(const NewState: TState);
+procedure TOnlineTesterForm.OnStateChanged(const NewState: TOnlineState);
 const
-  ColorArray : array[TState] of TColor = (clRed, clGreen);
-  StrArray: array[TState] of String = ('Offline', 'Online');
+  ColorArray : array[TOnlineState] of TColor = (clRed, clGreen);
+  StrArray: array[TOnlineState] of String = ('Offline', 'Online');
 begin
   Color := ColorArray[NewState];
   Label1.Caption := StrArray[NewState];

@@ -11,8 +11,10 @@ type
   TMainForm = class(TForm)
     Button1: TButton;
     Button2: TButton;
+    Button3: TButton;
     procedure Button1Click(Sender: TObject);
     procedure Button2Click(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
   private
     { Private declarations }
   public
@@ -26,6 +28,7 @@ implementation
 
 uses
   OnlineOfflineU, OnlineTesterFormU;
+
 {$R *.dfm}
 
 procedure TMainForm.Button1Click(Sender: TObject);
@@ -53,10 +56,15 @@ end;
 
 procedure TMainForm.Button2Click(Sender: TObject);
 begin
-  if OnlineOffline.State = TState.Offline then
-    OnlineOffline.State := TState.Online
+  if OnlineOffline.OnlineState = TOnlineState.Offline then
+    OnlineOffline.OnlineState := TOnlineState.Online
   else
-    OnlineOffline.State := TState.Offline;
+    OnlineOffline.OnlineState := TOnlineState.Offline;
+end;
+
+procedure TMainForm.Button3Click(Sender: TObject);
+begin
+  OnlineOffline.ScanningInterval := 15;
 end;
 
 end.

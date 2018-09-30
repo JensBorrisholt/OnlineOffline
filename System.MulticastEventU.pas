@@ -1,209 +1,262 @@
 unit System.MulticastEventU;
 
+(*
+  Credit to ALLEN, and his blogpost Multicast events using generics (https://community.embarcadero.com/blogs/entry/multicast-events-using-generics-38865)
+  This is mainly his code. There have only been added support for 64 bit.
+*)
+
 interface
 
 uses
   Classes, SysUtils, Generics.Collections, ObjAuto, TypInfo;
 
-{$O+}
-{$IFDEF MSWINDOWS}
-{$IFNDEF WIN32}
-{$MESSAGE Fatal 'Target platform is the native 32-bit Windows platform.'}
-{$ENDIF}
-{$ELSE}
+{$IFNDEF MSWINDOWS}
 {$MESSAGE Fatal 'WINDOWS ONLY!'}
 {$ENDIF}
 
-type
-  // you MUST also have optimization turned on in your project options for this
-  // to work! Not sure why.
-{$STACKFRAMES on}
+{$O+}
 {$IFOPT O-}
-{$MESSAGE Fatal 'optimisation _must_ be turned on for this unit to work!'}
+{$MESSAGE Fatal 'Optimization _must_ be turned on for this unit to work!'}
 {$ENDIF}
-{$HINTS OFF}
-  (*
-    HINTS OFF in order to hide theese false positive Warnings
-    [dcc32 Hint] System.MulticastEventU.pas(25): H2219 Private symbol 'Add' declared but never used
-    [dcc32 Hint] System.MulticastEventU.pas(26): H2219 Private symbol 'Remove' declared but never used
-    [dcc32 Hint] System.MulticastEventU.pas(27): H2219 Private symbol 'IndexOf' declared but never used
 
-    They gets called form their respective InternalXXX methods
-  *)
-  TMulticastEvent = class
-  strict protected
+type
+  TMultiCastEvent = class
+  strict private
   type
     TEvent = procedure of object;
   strict private
-    FHandlers: TList<TMethod>;
-    FInternalDispatcher: TMethod;
-
+    FHandlers: array of TMethod;
+    FInternalDispatcher: TMethod; // this class needs to keep it's own reference for cleanup later
     procedure InternalInvoke(Params: PParameters; StackSize: Integer);
-    procedure SetDispatcher(var AMethod: TMethod; ATypeData: PTypeData);
-    procedure Add(const AMethod: TEvent); overload;
-    procedure Remove(const AMethod: TEvent); overload;
-    function IndexOf(const AMethod: TEvent): Integer; overload;
+    procedure InternalInvokeAMethod(const aMethod: TMethod; const aParams: PParameters; aStackSize: Integer);
+    procedure ReleaseInternalDispatcher;
+    procedure SetDispatcher(var aMethod: TMethod; aTypeData: PTypeData);
   protected
     procedure InternalAdd;
-    procedure InternalRemove;
-    procedure InternalIndexOf;
     procedure InternalSetDispatcher;
   public
-    constructor Create;
-    destructor Destroy; override;
+    constructor Create; virtual;
+    procedure BeforeDestruction; override;
+    procedure Add(const aEvent: TEvent); overload;
   end;
 
-{$HINTS ON}
-
-  TMulticastEvent<T> = class(TMulticastEvent)
+  TMultiCastEvent<T> = class(TMultiCastEvent)
   strict private
     FInvoke: T;
-    procedure SetEventDispatcher(var ADispatcher: T; ATypeData: PTypeData);
+    procedure SetEventDispatcher(var ADispatcher: T; aTypeData: PTypeData);
   public
-    constructor Create;
-    procedure Add(const AMethod: T); overload;
-    procedure Remove(const AMethod: T); overload;
-    function IndexOf(const AMethod: T): Integer; overload;
-
+    constructor Create; overload; override;
+    constructor Create(aEvents: array of T); reintroduce; overload;
+    procedure Add(const aMethod: T); overload;
     property Invoke: T read FInvoke;
   end;
 
 implementation
 
-{ TMulticastEvent }
-
-procedure TMulticastEvent.Add(const AMethod: TEvent);
+procedure TMultiCastEvent.Add(const aEvent: TEvent);
 begin
-  FHandlers.Add(TMethod(AMethod))
+  FHandlers := FHandlers + [TMethod(aEvent)];
 end;
 
-constructor TMulticastEvent.Create;
+procedure TMultiCastEvent.SetDispatcher(var aMethod: TMethod; aTypeData: PTypeData);
+begin
+  ReleaseInternalDispatcher;
+  FInternalDispatcher := CreateMethodPointer(InternalInvoke, aTypeData);
+  aMethod := FInternalDispatcher;
+end;
+
+procedure TMultiCastEvent.BeforeDestruction;
 begin
   inherited;
-  FHandlers := TList<TMethod>.Create;
+  ReleaseInternalDispatcher;
 end;
 
-destructor TMulticastEvent.Destroy;
+constructor TMultiCastEvent.Create;
 begin
-  ReleaseMethodPointer(FInternalDispatcher);
-  FreeAndNil(FHandlers);
   inherited;
+  FHandlers := [];
 end;
 
-function TMulticastEvent.IndexOf(const AMethod: TEvent): Integer;
-begin
-  result := FHandlers.IndexOf(TMethod(AMethod));
-end;
-
-procedure TMulticastEvent.InternalAdd;
+procedure TMultiCastEvent.InternalAdd;
 asm
-  XCHG  EAX,[ESP]
-  POP   EAX
-  POP   EBP
-  JMP   Add
+  {$IFDEF Win32}
+  xchg  [esp],eax
+  pop   eax
+  {$IFOPT o-}
+  pop   ecx
+  {$IFEND}
+  pop   ebp
+  jmp   Add
+  {$IFEND}
+  {$IFDEF Win64}
+  xchg  [rsp],rax
+  pop   rax
+  lea   rsp,[rbp+$20]
+  pop   rbp
+  jmp   Add
+  {$IFEND}
 end;
 
-procedure TMulticastEvent.InternalIndexOf;
-asm
-  XCHG  EAX,[ESP]
-  POP   EAX
-  POP   EBP
-  JMP   IndexOf
-end;
-
-procedure TMulticastEvent.InternalInvoke(Params: PParameters; StackSize: Integer);
+procedure TMultiCastEvent.InternalInvoke(Params: PParameters; StackSize: Integer);
 var
-  LMethod: TMethod;
+  M: TMethod;
 begin
-  for LMethod in FHandlers do
-  begin
-    // Check to see if there is anything on the stack.
-    if StackSize > 0 then
-      asm
-        // if there are items on the stack, allocate the space there and
-        // move that data over.
-        MOV ECX,StackSize
-        SUB ESP,ECX
-        MOV EDX,ESP
-        MOV EAX,Params
-        LEA EAX,[EAX].TParameters.Stack[8]
-        CALL System.Move
-      end;
-    asm
-      // Now we need to load up the registers. EDX and ECX may have some data
-      // so load them on up.
-      MOV EAX,Params
-      MOV EDX,[EAX].TParameters.Registers.DWORD[0]
-      MOV ECX,[EAX].TParameters.Registers.DWORD[4]
-      // EAX is always "Self" and it changes on a per method pointer instance, so
-      // grab it out of the method data.
-      MOV EAX,LMethod.Data
-      // Now we call the method. This depends on the fact that the called method
-      // will clean up the stack if we did any manipulations above.
-      CALL LMethod.Code
-    end;
-  end;
+  for M in FHandlers do
+    if Assigned(M.Code) then
+      InternalInvokeAMethod(M, Params, StackSize);
 end;
 
-procedure TMulticastEvent.InternalRemove;
+procedure TMultiCastEvent.InternalInvokeAMethod(const aMethod: TMethod; const aParams: PParameters; aStackSize: Integer);
+var
+  Method_Code: Pointer;
+  Method_Data: Pointer;
+  Method_Params: PParameters;
+  Params_StackSize: Integer;
+{$IFDEF Win32}
+  asm
+    // store aMethod.Code
+    mov eax, aMethod.Code
+    mov Method_Code, eax
+
+    // store aMethod.Data
+    mov eax, aMethod.Data
+    mov Method_Data, eax
+
+    // store aParams
+    mov eax, aParams
+    mov Method_Params, eax
+
+    // store aStackSize
+    mov eax, aStackSize
+    mov Params_StackSize, eax
+
+    // Check to see if there is anything in the TParameters.Stack
+    cmp Params_StackSize, 0
+    jle @InvokeMethod
+
+    // Parameters.Stack has data, allocate a space and move data over.
+    // The data are parameters pass to event handler
+    sub esp, Params_StackSize     // Allocate storage spaces
+    mov eax, Method_Params        // source
+    lea eax, [eax].TParameters.Stack
+    mov edx, esp                  // destination
+    mov ecx, Params_StackSize     // count
+    call System.Move
+
+  @InvokeMethod:
+
+    // Load parameters to rdx (1st), r8 (2nd) and r9 (3rd).
+    // 4th parameters shall loaded in last step
+    mov eax, Method_Params
+    mov edx, [eax].TParameters.Registers.DWORD[0] // 1st parameter
+    mov ecx, [eax].TParameters.Registers.DWORD[4] // 2nd parameter
+
+    // EAX is always "Self", move TMethod.Data to the register
+    mov eax, Method_Data
+
+    // Call method
+    call Method_Code
+end;
+{$IFEND}
+{$IFDEF win64}
 asm
-  XCHG  EAX,[ESP]
-  POP   EAX
-  POP   EBP
-  JMP   Remove
-end;
+  // store aMethod.Code
+  mov rax, aMethod.Code
+  mov Method_Code, rax
 
-procedure TMulticastEvent.InternalSetDispatcher;
+  // store aMethod.Data
+  mov rax, aMethod.Data
+  mov Method_Data, rax
+
+  // store aParams
+  mov rax, aParams
+  mov Method_Params, rax
+
+  // store aStackSize
+  mov Params_StackSize, aStackSize
+
+  // Check to see if there is anything in the TParameters.Stack
+  cmp Params_StackSize, 0
+  jle @InvokeMethod
+
+  // Parameters.Stack has data, allocate a space and move data over.
+  // The data are parameters pass to event handler
+  sub esp, Params_StackSize   // Allocate storage spaces
+  mov rcx, Method_Params      // source
+  lea rcx, [rcx].TParameters.Stack
+  mov rdx, rsp                // destination
+  mov r8d, Params_StackSize   // count
+  call System.Move
+
+@InvokeMethod:
+
+  // Load parameters to rdx (1st), r8 (2nd) and r9 (3rd).
+  // 4th parameters shall loaded in last step
+  mov rax, Method_Params
+  mov rdx, [rax].TParameters.Stack.QWORD[$08]  // 1st parameter
+  mov r8,  [rax].TParameters.Stack.QWORD[$10]  // 2nd parameter
+  mov r9,  [rax].TParameters.Stack.QWORD[$18]  // 3rd parameter
+
+  // RCX is always "Self", move TMethod.Data to the register
+  mov rcx, Method_Data
+
+  // Call method
+  call Method_Code
+end;
+{$IFEND}
+
+procedure TMultiCastEvent.InternalSetDispatcher;
 asm
-  XCHG  EAX,[ESP]
-  POP   EAX
-  POP   EBP
-  JMP   SetDispatcher;
+  {$IFDEF Win32}
+  xchg  [esp],eax
+  pop   eax
+  {$IFOPT o-}
+  mov esp,ebp{$IFEND}
+  pop   ebp
+  jmp   SetDispatcher
+  {$IFEND}
+  {$IFDEF Win64}
+  xchg  [rsp],rax
+  pop   rax
+  lea   rsp,[rbp+$20]
+  pop   rbp
+  jmp   SetDispatcher
+  {$IFEND}
 end;
 
-procedure TMulticastEvent.Remove(const AMethod: TEvent);
-begin
-  FHandlers.Remove(TMethod(AMethod));
-end;
-
-procedure TMulticastEvent.SetDispatcher(var AMethod: TMethod; ATypeData: PTypeData);
+procedure TMultiCastEvent.ReleaseInternalDispatcher;
 begin
   if Assigned(FInternalDispatcher.Code) and Assigned(FInternalDispatcher.Data) then
     ReleaseMethodPointer(FInternalDispatcher);
-  FInternalDispatcher := CreateMethodPointer(InternalInvoke, ATypeData);
-  AMethod := FInternalDispatcher;
 end;
 
-{ TMulticastEvent<T> }
-
-procedure TMulticastEvent<T>.Add(const AMethod: T);
+procedure TMultiCastEvent<T>.Add(const aMethod: T);
 begin
   InternalAdd;
 end;
 
-constructor TMulticastEvent<T>.Create;
+constructor TMultiCastEvent<T>.Create;
 var
-  MethInfo: PTypeInfo;
-  TypeData: PTypeData;
+  M: PTypeInfo;
+  D: PTypeData;
 begin
-  MethInfo := TypeInfo(T);
-  TypeData := GetTypeData(MethInfo);
   inherited Create;
-  Assert(MethInfo.Kind = tkMethod, 'T must be a method pointer type');
-  SetEventDispatcher(FInvoke, TypeData);
+  M := TypeInfo(T);
+  D := GetTypeData(M);
+  Assert(M.Kind = tkMethod, 'T must be a method pointer type');
+  SetEventDispatcher(FInvoke, D);
 end;
 
-function TMulticastEvent<T>.IndexOf(const AMethod: T): Integer;
+constructor TMultiCastEvent<T>.Create(aEvents: array of T);
+var
+  E: T;
 begin
-  InternalIndexOf;
+  Create;
+  for E in aEvents do
+    Add(E);
 end;
 
-procedure TMulticastEvent<T>.Remove(const AMethod: T);
-begin
-  InternalRemove;
-end;
-
-procedure TMulticastEvent<T>.SetEventDispatcher(var ADispatcher: T; ATypeData: PTypeData);
+procedure TMultiCastEvent<T>.SetEventDispatcher(var ADispatcher: T; aTypeData: PTypeData);
 begin
   InternalSetDispatcher;
 end;

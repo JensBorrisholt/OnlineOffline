@@ -16,21 +16,30 @@ object MainForm: TMainForm
   PixelsPerInch = 96
   TextHeight = 13
   object Button1: TButton
-    Left = 24
+    Left = 11
     Top = 8
-    Width = 75
+    Width = 105
     Height = 25
     Caption = 'Start the fun'
     TabOrder = 0
     OnClick = Button1Click
   end
   object Button2: TButton
-    Left = 24
+    Left = 11
     Top = 39
-    Width = 75
+    Width = 105
     Height = 25
     Caption = 'Change State'
     TabOrder = 1
     OnClick = Button2Click
+  end
+  object Button3: TButton
+    Left = 11
+    Top = 70
+    Width = 105
+    Height = 25
+    Caption = 'Change interval'
+    TabOrder = 2
+    OnClick = Button3Click
   end
 end
