@@ -1,0 +1,30 @@
+object OnlineTesterForm: TOnlineTesterForm
+  Left = 0
+  Top = 0
+  BorderStyle = bsNone
+  Caption = 'OnlineTesterForm'
+  ClientHeight = 120
+  ClientWidth = 340
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OldCreateOrder = False
+  OnCreate = FormCreate
+  PixelsPerInch = 96
+  TextHeight = 13
+  object Label1: TLabel
+    Left = 27
+    Top = 16
+    Width = 21
+    Height = 81
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -67
+    Font.Name = 'Tahoma'
+    Font.Style = []
+    ParentFont = False
+  end
+end
