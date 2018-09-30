@@ -4,7 +4,7 @@ Delphi unit to check Online state
 ## Credit
 
 In this solution you'll find a Multicast Event class.
-"All Creditcto ALLEN, and his blogpost Multicast events using generics". This is mainly his code. There have only been added support for 64 bit.
+"All Creditc to ALLEN, and his blogpost Multicast events using generics". This is mainly his code. There have only been added support for 64 bit.
 
 ### Features
 * Checks the connection to the Internet every X seconds
