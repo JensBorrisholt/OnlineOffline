@@ -6,12 +6,9 @@ uses
   System.Threading, System.Generics.Collections, System.MulticastEventU, idHTTP;
 
 {$M+,O+}
-
 {$IFOPT O-}
 {$MESSAGE Fatal 'Optimization _must_ be turned on for this unit to work!'}
 {$ENDIF}
-
-
 {$HINTS OFF}
 
 // Hints off in order for hiding message;
@@ -42,7 +39,7 @@ type
 
     constructor Create; reintroduce;
     destructor Destroy; override;
-    procedure CheckState;
+    procedure CheckState(aForceNotify: Boolean = false);
     procedure DoNotify;
     procedure SetOnlineState(const Value: TOnlineState);
     procedure StartTask;
@@ -79,7 +76,7 @@ begin
   inherited Create;
   FScanningInterval := 10;
   FStateChangedNotifiers := TMulticastStateChangedEvent.Create;
-  FOnlineState := TOnlineState.Offline;
+  FOnlineState := TOnlineState.Online;
   FidHTTP := TIdHTTP.Create(nil);
   Start;
 end;
@@ -94,11 +91,10 @@ end;
 
 class destructor TOnlineOffline.Destroy;
 begin
-  if FInstance <> nil then
-    FreeAndNil(FInstance);
+  FreeAndNil(FInstance);
 end;
 
-procedure TOnlineOffline.CheckState;
+procedure TOnlineOffline.CheckState(aForceNotify: Boolean = false);
 var
   NewState: TOnlineState;
 begin
@@ -109,7 +105,7 @@ begin
     NewState := TOnlineState.Offline;
   end;
 
-  if NewState <> FOnlineState then
+  if aForceNotify or (NewState <> FOnlineState) then
   begin
     FOnlineState := NewState;
     DoNotify;
@@ -152,7 +148,7 @@ end;
 procedure TOnlineOffline.StartTask;
 begin
   Stop;
-  FTerminated := False;
+  FTerminated := false;
   FTask := TTask.Run(
     procedure
     var
@@ -169,7 +165,7 @@ begin
       if Terminated then
         exit;
 
-      CheckState;
+      CheckState(True);
 
       while not Terminated do
       begin
