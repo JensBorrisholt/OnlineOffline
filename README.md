@@ -1,6 +1,14 @@
 # OnlineOffline
 Delphi unit to check Online state
 
+## Minimum version  
+of Delphi needed: XE8  
+But you can alter one line to run under XE7 too. See [here...](https://github.com/JensBorrisholt/OnlineOffline/issues/2#issuecomment-1133890562)  
+  
+## Installation
+Just copy `System.MulticastEventU.pas` to anywhere and add it to your project.  
+There is a demo to see, how it can be used. The main part is in `OnlineOfflineU.pas` which is using Indy10 to check google.com.  
+  
 ## Credit
 
 In this solution you'll find a Multicast Event class.
